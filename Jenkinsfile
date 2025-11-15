@@ -23,12 +23,11 @@ pipeline {
 
         stage('Build & Test') {
             steps {
-                echo "Running Maven Build..."
+                echo "Building with Maven..."
                 sh 'mvn clean package'
             }
             post {
                 always {
-                    echo "Publishing test results (allow empty)"
                     junit testResults: '**/target/surefire-reports/*.xml', allowEmptyResults: true
                 }
             }
@@ -36,7 +35,7 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                echo "Running SonarQube Analysis..."
+                echo "Running SonarQube..."
                 withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                     sh """
                         mvn sonar:sonar \
@@ -50,15 +49,23 @@ pipeline {
 
         stage('Upload to Nexus') {
             steps {
-                echo "Uploading WAR to Nexus..."
-                withCredentials([usernamePassword(credentialsId: 'nexus', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                    sh """
-                        mvn deploy \
-                        -DskipTests \
-                        -Dnexus.user=${NEXUS_USER} \
-                        -Dnexus.pass=${NEXUS_PASS} \
-                        -s settings.xml
-                    """
+                withCredentials([usernamePassword(credentialsId: 'nexus', passwordVariable: 'NEXUS_PASS', usernameVariable: 'NEXUS_USER')]) {
+                    
+                    sh '''
+                        cat <<EOF > settings.xml
+<settings>
+  <servers>
+    <server>
+      <id>nexus</id>
+      <username>${NEXUS_USER}</username>
+      <password>${NEXUS_PASS}</password>
+    </server>
+  </servers>
+</settings>
+EOF
+                    '''
+
+                    sh 'mvn deploy -DskipTests -s settings.xml'
                 }
             }
         }
@@ -74,7 +81,7 @@ pipeline {
 
         stage('Push to DockerHub') {
             steps {
-                echo "Pushing Docker image to DockerHub..."
+                echo "Pushing image to DockerHub..."
                 withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
                     sh """
                         echo ${DH_PASS} | docker login -u ${DH_USER} --password-stdin
