@@ -1,6 +1,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>onlinebookstore</groupId>
@@ -44,7 +45,7 @@
                 </executions>
             </plugin>
 
-            <!-- Compiler Plugin (Updated to Java 17) -->
+            <!-- Compiler Plugin -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -89,4 +90,18 @@
             <scope>provided</scope>
         </dependency>
     </dependencies>
+
+    <!-- ✅ Added correct Nexus deployment configuration -->
+    <distributionManagement>
+        <repository>
+            <id>nexus</id>
+            <url>http://3.80.98.236:8081/repository/maven-releases/</url>
+        </repository>
+
+        <snapshotRepository>
+            <id>nexus</id>
+            <url>http://3.80.98.236:8081/repository/maven-snapshots/</url>
+        </snapshotRepository>
+    </distributionManagement>
+
 </project>
