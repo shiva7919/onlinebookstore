@@ -1,99 +1,82 @@
 pipeline {
-  agent any
+    agent any
 
-  environment {
-    MAVEN_HOME = tool name: "Maven-3", type: "hudson.tasks.Maven$MavenInstallation"
-    SONAR_NAME = "My-Sonar"                     // must match Manage Jenkins -> SonarQube Servers name
-    NEXUS_URL  = "http://nexus:8081"
-  }
+    tools {
+        maven 'Maven-3'
+    }
 
-  options {
-    timeout(time: 60, unit: 'MINUTES')         // overall pipeline safety
-    ansiColor('xterm')
-  }
+    environment {
+        SONARQUBE_ENV = 'My-Sonar'
+    }
 
-  stages {
+    options {
+        timeout(time: 60, unit: 'MINUTES')
+        skipDefaultCheckout(true)
+    }
 
-    stage('Checkout') {
-      steps {
-        script {
-          // ensure branch matches your repo
-          git branch: 'master', url: 'https://github.com/KishanGollamudi/onlinebookstore.git'
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
         }
-      }
-    }
 
-    stage('SonarQube Analysis') {
-      steps {
-        withSonarQubeEnv("${SONAR_NAME}") {
-          sh """
-            echo "Using MAVEN_HOME=${MAVEN_HOME}"
-            ${MAVEN_HOME}/bin/mvn -B -e -DskipTests=false clean verify sonar:sonar \
-              -Dsonar.projectKey=onlinebookstore \
-              -Dsonar.host.url=${env.SONAR_HOST_URL}
-          """
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv("${env.SONARQUBE_ENV}") {
+                    sh """
+                        mvn clean verify sonar:sonar \
+                        -Dsonar.projectKey=onlinebookstore \
+                        -Dsonar.host.url=http://sonar:9000
+                    """
+                }
+            }
         }
-      }
-    }
 
-    stage('Wait For Quality Gate') {
-      steps {
-        script {
-          // show CE task id in logs to debug if needed
-          echo "Polling SonarQube for Quality Gate (timeout 10m)"
-          timeout(time: 10, unit: 'MINUTES') {
-            def qg = waitForQualityGate abortPipeline: true
-            echo "Quality Gate status: ${qg.status}"
-          }
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 10, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
         }
-      }
-    }
 
-    stage('Build (Maven)') {
-      steps {
-        sh "${MAVEN_HOME}/bin/mvn -B -DskipTests=false clean package"
-      }
-    }
-
-    stage('Deploy to Nexus') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'nexus-user', usernameVariable: 'NEXUS_USR', passwordVariable: 'NEXUS_PSW')]) {
-          sh """
-            ${MAVEN_HOME}/bin/mvn -B deploy \
-              -DaltDeploymentRepository=nexus::default::${NEXUS_URL}/repository/maven-releases/ \
-              -Dnexus.username=${NEXUS_USR} -Dnexus.password=${NEXUS_PSW}
-          """
+        stage('Build WAR with Maven') {
+            steps {
+                sh "mvn clean package"
+            }
         }
-      }
-    }
 
-    stage('Build Docker Image') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-user', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PSW')]) {
-          sh """
-            echo "${DOCKER_PSW}" | docker login -u "${DOCKER_USER}" --password-stdin
-            docker build -t ${DOCKER_USER}/onlinebookstore:${GIT_COMMIT ?: 'latest'} .
-          """
+        stage('Upload Artifact to Nexus') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'nexus', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                    sh """
+                        curl -v -u $NEXUS_USER:$NEXUS_PASS --upload-file target/onlinebookstore.war \
+                        http://nexus:8081/repository/maven-releases/onlinebookstore/onlinebookstore.war
+                    """
+                }
+            }
         }
-      }
-    }
 
-    stage('Push Docker Image') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub-user', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PSW')]) {
-          sh """
-            echo "${DOCKER_PSW}" | docker login -u "${DOCKER_USER}" --password-stdin
-            docker push ${DOCKER_USER}/onlinebookstore:${GIT_COMMIT ?: 'latest'}
-          """
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    sh "docker build -t onlinebookstore:v1 ."
+                }
+            }
         }
-      }
+
+        stage('Push Docker Image to DockerHub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                    sh """
+                        echo $DH_PASS | docker login -u $DH_USER --password-stdin
+                        docker tag onlinebookstore:v1 $DH_USER/onlinebookstore:v1
+                        docker push $DH_USER/onlinebookstore:v1
+                    """
+                }
+            }
+        }
     }
-
-  } // stages
-
-  post {
-    success { echo "Pipeline succeeded" }
-    failure { echo "Pipeline failed — check logs" }
-    aborted { echo "Pipeline aborted" }
-  }
 }
