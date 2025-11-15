@@ -2,11 +2,17 @@ pipeline {
     agent any
 
     environment {
-        SONAR_HOST_URL = "http://sonar:9000"
+        // Tools
+        MAVEN_HOME   = tool "Maven-3"
         SONAR_SCANNER = "SonarScanner"
-        MAVEN_HOME = tool "Maven-3"
-        DOCKERHUB_USER = credentials('dockerhub-user')
-        DOCKERHUB_PASS = credentials('dockerhub-pass')
+
+        // SonarQube Server config (using Jenkins integration)
+        SONARQUBE = "My-Sonar"
+
+        // Docker Hub Credential
+        DOCKER_CRED = credentials('dockerhub-user')
+
+        // Nexus Credentials
         NEXUS_USER = credentials('nexus-user')
         NEXUS_PASS = credentials('nexus-pass')
     }
@@ -15,7 +21,7 @@ pipeline {
 
         stage('Checkout Code') {
             steps {
-                git branch: 'main', url: 'YOUR_GITHUB_REPO_URL'
+                git branch: 'master', url: 'https://github.com/KishanGollamudi/onlinebookstore.git'
             }
         }
 
@@ -24,9 +30,8 @@ pipeline {
                 withSonarQubeEnv('My-Sonar') {
                     sh """
                        ${MAVEN_HOME}/bin/mvn clean verify sonar:sonar \
-                       -Dsonar.projectKey=my-app \
-                       -Dsonar.host.url=$SONAR_HOST_URL \
-                       -Dsonar.login=$SONARQUBE_AUTH_TOKEN
+                       -Dsonar.projectKey=onlinebookstore \
+                       -Dsonar.host.url=$SONAR_HOST_URL
                     """
                 }
             }
@@ -46,31 +51,40 @@ pipeline {
             }
         }
 
-        stage('Upload to Nexus') {
+        stage('Upload Artifact to Nexus') {
             steps {
                 sh """
                 ${MAVEN_HOME}/bin/mvn deploy \
-                -DaltDeploymentRepository=nexus::default::http://nexus:8081/repository/maven-releases/ \
-                -Dusername=$NEXUS_USER -Dpassword=$NEXUS_PASS
+                  -DaltDeploymentRepository=nexus::default::http://nexus:8081/repository/maven-releases/ \
+                  -Dusername=$NEXUS_USER -Dpassword=$NEXUS_PASS
                 """
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build Docker Image for Tomcat Deployment') {
             steps {
                 sh """
-                    docker build -t ${DOCKERHUB_USER}/myapp:latest .
+                docker build -t ${DOCKER_CRED_USR}/onlinebookstore:latest .
                 """
             }
         }
 
-        stage('Push to Docker Hub') {
+        stage('Push Image to Docker Hub') {
             steps {
                 sh """
-                    echo $DOCKERHUB_PASS | docker login -u $DOCKERHUB_USER --password-stdin
-                    docker push ${DOCKERHUB_USER}/myapp:latest
+                    echo $DOCKER_CRED_PSW | docker login -u $DOCKER_CRED_USR --password-stdin
+                    docker push ${DOCKER_CRED_USR}/onlinebookstore:latest
                 """
             }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline completed successfully!"
+        }
+        failure {
+            echo "Pipeline failed. Check logs."
         }
     }
 }
