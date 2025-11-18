@@ -116,7 +116,7 @@ EOF
         stage('Push to DockerHub') {
             steps {
                 echo "Pushing Docker image..."
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-user', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
                     sh '''
                         if [ -z "$DH_USER" ] || [ -z "$DH_PASS" ]; then
                           echo "ERROR: DockerHub credentials missing"
