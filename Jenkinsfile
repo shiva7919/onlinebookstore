@@ -108,8 +108,10 @@ EOF
             steps {
                 echo "Building Docker image..."
                 script {
-                    // build returns an image object we can push later
-                    dockerImage = docker.build("${DOCKER_IMAGE}:${VERSION}")
+                    // build locally for faster reuse; will rebuild in push stage for safety
+                    def tmpImage = docker.build("${DOCKER_IMAGE}:${VERSION}")
+                    // remove tmpImage reference to avoid keeping it in pipeline memory
+                    sh "docker rmi ${DOCKER_IMAGE}:${VERSION} || true"
                 }
             }
         }
@@ -117,25 +119,39 @@ EOF
         stage('Push to DockerHub') {
             steps {
                 echo "Pushing Docker image..."
-                // Use the Jenkins credential with ID 'dockerhub'. Make sure it exists and the username has push rights.
-                script {
-                    def credId = 'dockerhub' // must match Jenkins credential ID
-                    try {
-                        docker.withRegistry('https://index.docker.io/v1/', credId) {
-                            // push version tag and latest
-                            dockerImage.push("${VERSION}")
-                            dockerImage.push("latest")
+                // Use the Jenkins credential with ID 'dockerhub'
+                withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+                    script {
+                        // Basic sanity check: ensure the credential user matches the image namespace to avoid denied pushes
+                        def expectedNamespace = env.DOCKER_IMAGE.split('/')[0]
+                        echo "Image namespace expected: ${expectedNamespace}"
+                        echo "Credential username: ${DH_USER}"
+
+                        if (DH_USER != expectedNamespace) {
+                            error("""
+Credential username '${DH_USER}' does not match the image namespace '${expectedNamespace}'.
+Either:
+  • Use a credential whose username is '${expectedNamespace}', OR
+  • Change DOCKER_IMAGE to use the username in the credential, OR
+  • Add the credential user as a collaborator on the '${expectedNamespace}/onlinebookstore' repo on Docker Hub.
+""")
                         }
-                        echo "Docker image pushed: ${DOCKER_IMAGE}:${VERSION} and :latest"
-                    } catch (err) {
-                        // Better error message for access problems
-                        echo "ERROR: Docker push failed. Common causes: incorrect credentials, wrong credential ID, or the Docker Hub user does not have permission to push to the repository."
-                        echo "Ensure the Jenkins credential '${credId}' exists and its username matches the image namespace (i.e. '${DOCKER_IMAGE.split('/')[0]}')."
-                        throw err
-                    } finally {
-                        // Remove local image to free space (optional)
-                        sh "docker rmi ${DOCKER_IMAGE}:${VERSION} || true"
-                        sh "docker rmi ${DOCKER_IMAGE}:latest || true"
+
+                        try {
+                            // rebuild here to get a stage-scoped image object and then push
+                            def img = docker.build("${DOCKER_IMAGE}:${VERSION}")
+                            docker.withRegistry('https://index.docker.io/v1/', 'dockerhub') {
+                                img.push("${VERSION}")
+                                img.push("latest")
+                            }
+                            echo "Docker image pushed successfully: ${DOCKER_IMAGE}:${VERSION} and :latest"
+                        } catch (err) {
+                            echo "ERROR: Docker push failed. Possible causes: invalid credentials, wrong credential ID, user lacks push permission, or repo does not exist on Docker Hub."
+                            throw err
+                        } finally {
+                            sh "docker rmi ${DOCKER_IMAGE}:${VERSION} || true"
+                            sh "docker rmi ${DOCKER_IMAGE}:latest || true"
+                        }
                     }
                 }
             }
