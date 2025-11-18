@@ -108,7 +108,8 @@ EOF
             steps {
                 echo "Building Docker image..."
                 script {
-                    docker.build("${DOCKER_IMAGE}:${VERSION}")
+                    // build returns an image object we can push later
+                    dockerImage = docker.build("${DOCKER_IMAGE}:${VERSION}")
                 }
             }
         }
@@ -116,18 +117,26 @@ EOF
         stage('Push to DockerHub') {
             steps {
                 echo "Pushing Docker image..."
-                withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-                    sh '''
-                        if [ -z "$DH_USER" ] || [ -z "$DH_PASS" ]; then
-                          echo "ERROR: DockerHub credentials missing"
-                          exit 1
-                        fi
-
-                        echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-                        docker push ${DOCKER_IMAGE}:${VERSION}
-                        docker tag ${DOCKER_IMAGE}:${VERSION} ${DOCKER_IMAGE}:latest
-                        docker push ${DOCKER_IMAGE}:latest
-                    '''
+                // Use the Jenkins credential with ID 'dockerhub'. Make sure it exists and the username has push rights.
+                script {
+                    def credId = 'dockerhub' // must match Jenkins credential ID
+                    try {
+                        docker.withRegistry('https://index.docker.io/v1/', credId) {
+                            // push version tag and latest
+                            dockerImage.push("${VERSION}")
+                            dockerImage.push("latest")
+                        }
+                        echo "Docker image pushed: ${DOCKER_IMAGE}:${VERSION} and :latest"
+                    } catch (err) {
+                        // Better error message for access problems
+                        echo "ERROR: Docker push failed. Common causes: incorrect credentials, wrong credential ID, or the Docker Hub user does not have permission to push to the repository."
+                        echo "Ensure the Jenkins credential '${credId}' exists and its username matches the image namespace (i.e. '${DOCKER_IMAGE.split('/')[0]}')."
+                        throw err
+                    } finally {
+                        // Remove local image to free space (optional)
+                        sh "docker rmi ${DOCKER_IMAGE}:${VERSION} || true"
+                        sh "docker rmi ${DOCKER_IMAGE}:latest || true"
+                    }
                 }
             }
         }
