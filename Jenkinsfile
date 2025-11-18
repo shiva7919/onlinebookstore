@@ -6,12 +6,11 @@ pipeline {
         NEXUS_URL     = 'http://nexus:8081'
         DOCKER_IMAGE  = "shivasarla2398/onlinebookstore"
         VERSION       = "${env.BUILD_NUMBER}"
+        SONAR_TOKEN   = "sqa_0c955ce40ff0005b242b802aacfb313b589e279b"
     }
 
     tools {
-        // Ensure your Jenkins has a Maven installation named "Maven"
         maven 'Maven'
-        // Optional: if you need a specific JDK, uncomment and match your Jenkins JDK name
         // jdk 'JDK17'
     }
 
@@ -39,21 +38,19 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 echo "Running SonarQube..."
-                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    sh """
-                        mvn sonar:sonar \
-                        -Dsonar.projectKey=onlinebookstore \
-                        -Dsonar.host.url=${SONARQUBE_URL} \
-                        -Dsonar.login=${SONAR_TOKEN}
-                    """
-                }
+                sh '''
+                    mvn sonar:sonar \
+                      -Dsonar.projectKey=onlinebookstore \
+                      -Dsonar.host.url=$SONARQUBE_URL \
+                      -Dsonar.login=$SONAR_TOKEN
+                '''
             }
         }
 
         stage('Upload to Nexus') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'nexus', passwordVariable: 'NEXUS_PASS', usernameVariable: 'NEXUS_USER')]) {
-                    
+
                     sh '''
                         cat <<EOF > settings.xml
 <settings>
@@ -86,16 +83,15 @@ EOF
             steps {
                 echo "Pushing image to DockerHub..."
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-user', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
-                    sh """
-                        echo ${DH_PASS} | docker login -u ${DH_USER} --password-stdin
+                    sh '''
+                        echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
                         docker push ${DOCKER_IMAGE}:${VERSION}
                         docker tag ${DOCKER_IMAGE}:${VERSION} ${DOCKER_IMAGE}:latest
                         docker push ${DOCKER_IMAGE}:latest
-                    """
+                    '''
                 }
             }
         }
-
     }
 
     post {
