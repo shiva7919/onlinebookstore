@@ -17,7 +17,6 @@ pipeline {
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 echo "Checking out code..."
@@ -82,6 +81,11 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'nexus', passwordVariable: 'NEXUS_PASS', usernameVariable: 'NEXUS_USER')]) {
                     sh '''
+                        if [ -z "$NEXUS_USER" ] || [ -z "$NEXUS_PASS" ]; then
+                          echo "ERROR: Nexus credentials missing"
+                          exit 1
+                        fi
+
                         cat <<EOF > settings.xml
 <settings>
   <servers>
@@ -113,6 +117,25 @@ EOF
                 echo "Pushing Docker image..."
                 withCredentials([usernamePassword(credentialsId: 'dockerhub-user', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
                     sh '''
+                        if [ -z "$DH_USER" ] || [ -z "$DH_PASS" ]; then
+                          echo "ERROR: DockerHub credentials missing"
+                          exit 1
+                        fi
+
                         echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
                         docker push ${DOCKER_IMAGE}:${VERSION}
-                        docker tag ${DOCKER_IMAGE}:${VERSION} ${DOCKE_
+                        docker tag ${DOCKER_IMAGE}:${VERSION} ${DOCKER_IMAGE}:latest
+                        docker push ${DOCKER_IMAGE}:latest
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo "Cleaning workspace..."
+            cleanWs()
+        }
+    }
+}
