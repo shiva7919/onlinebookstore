@@ -4,7 +4,7 @@ pipeline {
     environment {
         SONARQUBE_URL = 'http://sonar:9000'
         NEXUS_URL     = 'http://nexus:8081'
-        DOCKER_IMAGE  = "kishangollamudi/onlinebookstore"
+        DOCKER_IMAGE  = "shivasarla2398/onlinebookstore"
         VERSION       = "${env.BUILD_NUMBER}"
     }
 
