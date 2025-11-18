@@ -3,10 +3,9 @@ pipeline {
 
     environment {
         SONARQUBE_URL = 'http://54.209.26.217:9000'
-        NEXUS_URL     = 'http://nexus:8081'
+        NEXUS_URL     = 'http://54.209.26.217:8081'
         DOCKER_IMAGE  = "shivasarla2398/onlinebookstore"
         VERSION       = "${env.BUILD_NUMBER}"
-        SONAR_TOKEN   = "sqa_0c955ce40ff0005b242b802aacfb313b589e279b"
         SONAR_WAIT_ATTEMPTS = "12"
         SONAR_WAIT_SLEEP    = "5"
     }
@@ -68,12 +67,14 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 echo "Running SonarQube Analysis..."
-                sh '''
-                    mvn sonar:sonar \
-                      -Dsonar.projectKey=onlinebookstore \
-                      -Dsonar.host.url=$SONARQUBE_URL \
-                      -Dsonar.login=$SONAR_TOKEN
-                '''
+                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                    sh '''
+                        mvn sonar:sonar \
+                          -Dsonar.projectKey=onlinebookstore \
+                          -Dsonar.host.url=$SONARQUBE_URL \
+                          -Dsonar.login=$SONAR_TOKEN
+                    '''
+                }
             }
         }
 
